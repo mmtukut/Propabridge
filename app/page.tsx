@@ -2,51 +2,41 @@
 
 import type React from "react"
 import { useState, useRef, useEffect } from "react"
-import { Send, Mic, Shield, TrendingUp, MapPin, Bed, Bath, Square } from "lucide-react"
+import { Send, Mic, X, ChevronLeft, ChevronRight, Shield, MapPin, Bed, Bath, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 interface Message {
   id: string
   role: "user" | "assistant"
   content: string
   timestamp: Date
+  suggestionChips?: string[]
 }
 
-interface ConversationState {
-  sessionId: string
-  confidence: number
-  conversationStage: string
-  context: any
-}
-
-interface PropertyRecommendation {
+interface Property {
   id: string
   address: string
   price: number
   bedrooms: number
   bathrooms: number
   size_sqft: number
+  photos: string[]
   isVerified: boolean
   verificationScore: number
-  marketInsights: {
-    pricePerSqft: number
-    marketTrend: string
-    neighborhoodScore: number
-  }
-  photos: string[]
+  description: string
 }
 
+type AppState = "CONVERSING" | "PRESENTING"
+
 export default function PropaBridgeAgent() {
+  const [appState, setAppState] = useState<AppState>("CONVERSING")
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [conversationState, setConversationState] = useState<ConversationState | null>(null)
-  const [currentProperty, setCurrentProperty] = useState<PropertyRecommendation | null>(null)
-  const [showVerification, setShowVerification] = useState(false)
+  const [currentProperty, setCurrentProperty] = useState<Property | null>(null)
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0)
   const [sessionId] = useState(`session_${Date.now()}`)
   const [showWelcome, setShowWelcome] = useState(true)
   const [isListening, setIsListening] = useState(false)
@@ -66,7 +56,6 @@ export default function PropaBridgeAgent() {
 
     setShowWelcome(false)
 
-    // Add welcome message from agent
     const welcomeMessage: Message = {
       id: "welcome",
       role: "assistant",
@@ -119,16 +108,14 @@ export default function PropaBridgeAgent() {
         role: "assistant",
         content: data.response,
         timestamp: new Date(),
+        suggestionChips: data.suggestionChips || [],
       }
 
       setMessages((prev) => [...prev, assistantMessage])
-      setConversationState(data.conversationState)
 
-      if (data.shouldShowProperty && data.property) {
-        setCurrentProperty({
-          ...data.property,
-          photos: ["/placeholder.svg?height=400&width=600", "/placeholder.svg?height=400&width=600"],
-        })
+      // Store property data for potential presentation
+      if (data.propertyData) {
+        setCurrentProperty(data.propertyData)
       }
     } catch (error) {
       console.error("Error:", error)
@@ -144,37 +131,155 @@ export default function PropaBridgeAgent() {
     }
   }
 
-  const handleConnectionRequest = () => {
-    if (currentProperty) {
-      const connectionMessage: Message = {
-        id: Date.now().toString(),
-        role: "user",
-        content: `I'd like to connect with the owner of ${currentProperty.address}`,
-        timestamp: new Date(),
-      }
-      setMessages((prev) => [...prev, connectionMessage])
+  const handleSuggestionChip = (suggestion: string) => {
+    if (suggestion.toLowerCase().includes("show me") || suggestion.toLowerCase().includes("see it")) {
+      // Transition to PRESENTING state
+      setAppState("PRESENTING")
+      setCurrentPhotoIndex(0)
+    } else {
+      // Continue conversation
+      handleConversation(suggestion)
+    }
+  }
 
-      setTimeout(() => {
-        const successMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: `🎉 **Perfect!** I've connected you with the verified owner of ${currentProperty.address}. They'll contact you within 2 hours.
+  const handleConnectionRequest = () => {
+    setAppState("CONVERSING")
+    const connectionMessage: Message = {
+      id: Date.now().toString(),
+      role: "assistant",
+      content: `🎉 **Perfect!** I've connected you with the verified owner of ${currentProperty?.address}. They'll contact you within 2 hours.
 
 **Mission Accomplished!** We've successfully matched you with a blockchain-verified property that meets your exact requirements.
 
 Would you like to explore additional options or need help with anything else?`,
-          timestamp: new Date(),
-        }
-        setMessages((prev) => [...prev, successMessage])
-      }, 1000)
+      timestamp: new Date(),
     }
+    setMessages((prev) => [...prev, connectionMessage])
   }
 
   const toggleVoiceInput = () => {
     setIsListening(!isListening)
-    // Voice input implementation would go here
   }
 
+  // IMMERSIVE MEDIA VIEWER - Full Screen Property Presentation
+  if (appState === "PRESENTING" && currentProperty) {
+    return (
+      <div className="fixed inset-0 bg-black z-50">
+        {/* Close Button */}
+        <Button
+          onClick={() => setAppState("CONVERSING")}
+          className="absolute top-6 right-6 z-10 w-12 h-12 rounded-full bg-black/50 hover:bg-black/70 text-white border-0 backdrop-blur-sm"
+        >
+          <X className="w-6 h-6" />
+        </Button>
+
+        {/* Photo Navigation */}
+        {currentProperty.photos.length > 1 && (
+          <>
+            <Button
+              onClick={() => setCurrentPhotoIndex(Math.max(0, currentPhotoIndex - 1))}
+              disabled={currentPhotoIndex === 0}
+              className="absolute left-6 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full bg-black/50 hover:bg-black/70 text-white border-0 backdrop-blur-sm disabled:opacity-30"
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </Button>
+            <Button
+              onClick={() => setCurrentPhotoIndex(Math.min(currentProperty.photos.length - 1, currentPhotoIndex + 1))}
+              disabled={currentPhotoIndex === currentProperty.photos.length - 1}
+              className="absolute right-6 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full bg-black/50 hover:bg-black/70 text-white border-0 backdrop-blur-sm disabled:opacity-30"
+            >
+              <ChevronRight className="w-6 h-6" />
+            </Button>
+          </>
+        )}
+
+        {/* Full Screen Image */}
+        <div className="relative w-full h-full">
+          <img
+            src={currentProperty.photos[currentPhotoIndex] || "/placeholder.svg?height=1080&width=1920"}
+            alt={currentProperty.address}
+            className="w-full h-full object-cover"
+          />
+
+          {/* Gradient Overlay for Text Readability */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+        </div>
+
+        {/* Property Information Overlay */}
+        <div className="absolute bottom-0 left-0 right-0 p-8 text-white">
+          <div className="max-w-4xl mx-auto space-y-6">
+            {/* Price and Verification */}
+            <div className="flex items-center justify-between">
+              <h1 className="text-4xl md:text-6xl font-bold">₦{currentProperty.price.toLocaleString()}</h1>
+              {currentProperty.isVerified && (
+                <Badge className="bg-gradient-to-r from-amber-500 to-orange-500 text-white border-0 px-4 py-2 text-sm">
+                  <Shield className="w-4 h-4 mr-2" />
+                  Blockchain Verified
+                </Badge>
+              )}
+            </div>
+
+            {/* Address */}
+            <p className="text-xl md:text-2xl text-white/90 flex items-center">
+              <MapPin className="w-6 h-6 mr-3" />
+              {currentProperty.address}
+            </p>
+
+            {/* Property Details */}
+            <div className="flex items-center space-x-8 text-lg text-white/80">
+              <div className="flex items-center">
+                <Bed className="w-5 h-5 mr-2" />
+                {currentProperty.bedrooms} bedrooms
+              </div>
+              <div className="flex items-center">
+                <Bath className="w-5 h-5 mr-2" />
+                {currentProperty.bathrooms} bathrooms
+              </div>
+              <div className="flex items-center">
+                <Square className="w-5 h-5 mr-2" />
+                {currentProperty.size_sqft.toLocaleString()} sqft
+              </div>
+            </div>
+
+            {/* Description */}
+            <p className="text-lg text-white/90 max-w-3xl leading-relaxed">{currentProperty.description}</p>
+
+            {/* Photo Counter */}
+            {currentProperty.photos.length > 1 && (
+              <div className="flex items-center space-x-2">
+                {currentProperty.photos.map((_, index) => (
+                  <div
+                    key={index}
+                    className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                      index === currentPhotoIndex ? "bg-white" : "bg-white/30"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex items-center space-x-4 pt-4">
+              <Button
+                onClick={handleConnectionRequest}
+                className="bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-700 hover:to-emerald-700 text-white px-8 py-3 text-lg font-semibold rounded-2xl transition-all duration-300 transform hover:scale-105"
+              >
+                Connect with Owner
+              </Button>
+              <Button
+                onClick={() => setAppState("CONVERSING")}
+                className="bg-white/20 hover:bg-white/30 text-white px-6 py-3 text-lg rounded-2xl backdrop-blur-sm border border-white/30"
+              >
+                Continue Conversation
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // WELCOME SCREEN
   if (showWelcome) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-800 flex items-center justify-center p-4">
@@ -187,7 +292,6 @@ Would you like to explore additional options or need help with anything else?`,
         </div>
 
         <div className="max-w-2xl w-full text-center space-y-8 relative z-10">
-          {/* Hero Typography */}
           <div className="space-y-4">
             <h1 className="text-5xl md:text-7xl font-bold text-white leading-tight">
               Your Perfect Home is Just a{" "}
@@ -200,7 +304,6 @@ Would you like to explore additional options or need help with anything else?`,
             </p>
           </div>
 
-          {/* Conversation Entry */}
           <form onSubmit={handleWelcomeSubmit} className="space-y-6">
             <div className="relative">
               <Input
@@ -220,7 +323,6 @@ Would you like to explore additional options or need help with anything else?`,
               </Button>
             </div>
 
-            {/* Voice Wave Animation */}
             {isListening && (
               <div className="flex items-center justify-center space-x-1">
                 {[...Array(5)].map((_, i) => (
@@ -245,31 +347,16 @@ Would you like to explore additional options or need help with anything else?`,
               Start Your Property Journey
             </Button>
           </form>
-
-          {/* Trust Indicators */}
-          <div className="flex items-center justify-center space-x-8 text-sm text-slate-400">
-            <div className="flex items-center space-x-2">
-              <Shield className="w-4 h-4 text-emerald-400" />
-              <span>Blockchain Verified</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <TrendingUp className="w-4 h-4 text-amber-400" />
-              <span>Market Intelligence</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <MapPin className="w-4 h-4 text-blue-400" />
-              <span>Lagos & Abuja Expert</span>
-            </div>
-          </div>
         </div>
       </div>
     )
   }
 
+  // CONVERSATION INTERFACE
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      {/* Sophisticated Header */}
-      <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200/50">
+      {/* Header */}
+      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-slate-200/50">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-emerald-500 rounded-2xl flex items-center justify-center">
@@ -280,119 +367,48 @@ Would you like to explore additional options or need help with anything else?`,
               <p className="text-xs text-slate-600">Revolutionary Property Intelligence</p>
             </div>
           </div>
-
-          {/* Conversation Intelligence */}
-          {conversationState && (
-            <div className="flex items-center space-x-3">
-              <div className="text-xs text-slate-600">
-                {conversationState.conversationStage} • {conversationState.confidence}%
-              </div>
-              <div className="w-2 h-2 rounded-full bg-gradient-to-r from-blue-500 to-emerald-500 animate-pulse" />
-            </div>
-          )}
         </div>
       </div>
 
       {/* Conversation Canvas */}
       <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         {messages.map((message) => (
-          <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div
-              className={`max-w-[80%] rounded-3xl px-6 py-4 ${
-                message.role === "user"
-                  ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/25"
-                  : "bg-white/70 backdrop-blur-sm text-slate-900 shadow-lg shadow-slate-500/10 border border-white/50"
-              }`}
-            >
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
-              <div className={`text-xs mt-2 ${message.role === "user" ? "text-blue-100" : "text-slate-500"}`}>
-                {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          <div key={message.id} className="space-y-4">
+            <div className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div
+                className={`max-w-[80%] rounded-3xl px-6 py-4 ${
+                  message.role === "user"
+                    ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/25"
+                    : "bg-white/70 backdrop-blur-sm text-slate-900 shadow-lg shadow-slate-500/10 border border-white/50"
+                }`}
+              >
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                <div className={`text-xs mt-2 ${message.role === "user" ? "text-blue-100" : "text-slate-500"}`}>
+                  {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </div>
               </div>
             </div>
+
+            {/* Suggestion Chips */}
+            {message.suggestionChips && message.suggestionChips.length > 0 && (
+              <div className="flex justify-start">
+                <div className="flex flex-wrap gap-2 max-w-[80%]">
+                  {message.suggestionChips.map((chip, index) => (
+                    <Button
+                      key={index}
+                      onClick={() => handleSuggestionChip(chip)}
+                      className="bg-white/80 hover:bg-white text-slate-700 hover:text-slate-900 border border-slate-200 rounded-full px-4 py-2 text-sm transition-all duration-200 transform hover:scale-105"
+                    >
+                      {chip}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ))}
 
-        {/* Premium Property Card */}
-        {currentProperty && (
-          <div className="flex justify-start">
-            <Card className="max-w-md shadow-2xl border-0 bg-white/90 backdrop-blur-sm overflow-hidden group hover:shadow-3xl transition-all duration-500 transform hover:-translate-y-1">
-              {/* Property Image Gallery */}
-              <div className="relative h-64 overflow-hidden">
-                <img
-                  src={currentProperty.photos[0] || "/placeholder.svg"}
-                  alt={currentProperty.address}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
-
-                {/* Verification Badge */}
-                {currentProperty.isVerified && (
-                  <Button
-                    onClick={() => setShowVerification(true)}
-                    className="absolute top-4 right-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border-0 rounded-full px-3 py-1 text-xs font-semibold shadow-lg"
-                  >
-                    <Shield className="w-3 h-3 mr-1" />
-                    Verified
-                  </Button>
-                )}
-
-                {/* Price Overlay */}
-                <div className="absolute bottom-4 left-4">
-                  <h3 className="text-2xl font-bold text-white">₦{currentProperty.price.toLocaleString()}</h3>
-                </div>
-              </div>
-
-              <CardContent className="p-6 space-y-4">
-                <div className="space-y-2">
-                  <p className="text-slate-600 text-sm flex items-center">
-                    <MapPin className="w-4 h-4 mr-2 text-slate-400" />
-                    {currentProperty.address}
-                  </p>
-
-                  <div className="flex items-center space-x-6 text-sm text-slate-600">
-                    <div className="flex items-center">
-                      <Bed className="w-4 h-4 mr-1 text-slate-400" />
-                      {currentProperty.bedrooms} bed
-                    </div>
-                    <div className="flex items-center">
-                      <Bath className="w-4 h-4 mr-1 text-slate-400" />
-                      {currentProperty.bathrooms} bath
-                    </div>
-                    <div className="flex items-center">
-                      <Square className="w-4 h-4 mr-1 text-slate-400" />
-                      {currentProperty.size_sqft.toLocaleString()} sqft
-                    </div>
-                  </div>
-                </div>
-
-                {/* Market Intelligence */}
-                <div className="bg-gradient-to-r from-slate-50 to-blue-50 rounded-2xl p-4 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-600">Market Intelligence</span>
-                    <TrendingUp className="w-3 h-3 text-emerald-500" />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-slate-700">
-                      ₦{currentProperty.marketInsights.pricePerSqft.toLocaleString()}/sqft
-                    </span>
-                    <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
-                      {currentProperty.marketInsights.marketTrend}
-                    </Badge>
-                  </div>
-                </div>
-
-                <Button
-                  onClick={handleConnectionRequest}
-                  className="w-full h-12 bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-700 hover:to-emerald-700 text-white font-semibold rounded-2xl transition-all duration-300 transform hover:scale-105"
-                >
-                  Connect with Owner
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        {/* Sophisticated Loading */}
+        {/* Loading */}
         {isLoading && (
           <div className="flex justify-start">
             <div className="bg-white/70 backdrop-blur-sm rounded-3xl px-6 py-4 shadow-lg border border-white/50">
@@ -415,7 +431,7 @@ Would you like to explore additional options or need help with anything else?`,
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Elegant Input Interface */}
+      {/* Input Interface */}
       <div className="sticky bottom-0 bg-white/80 backdrop-blur-xl border-t border-slate-200/50 p-4">
         <div className="max-w-4xl mx-auto">
           <form onSubmit={handleSubmit} className="flex items-center space-x-3">
@@ -445,101 +461,8 @@ Would you like to explore additional options or need help with anything else?`,
               <Send className="w-4 h-4" />
             </Button>
           </form>
-
-          {/* Confidence Indicator */}
-          {conversationState && conversationState.confidence > 0 && (
-            <div className="mt-3 text-center">
-              <div className="inline-flex items-center space-x-2 text-xs text-slate-500">
-                <span>Understanding your needs</span>
-                <div className="w-20 h-1 bg-slate-200 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all duration-500"
-                    style={{ width: `${conversationState.confidence}%` }}
-                  />
-                </div>
-                <span>{conversationState.confidence}%</span>
-              </div>
-            </div>
-          )}
         </div>
       </div>
-
-      {/* Premium Verification Certificate Modal */}
-      <Dialog open={showVerification} onOpenChange={setShowVerification}>
-        <DialogContent className="max-w-md mx-auto bg-gradient-to-br from-white to-slate-50 border-0 shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center space-x-3 text-xl">
-              <div className="w-8 h-8 bg-gradient-to-r from-amber-500 to-orange-500 rounded-full flex items-center justify-center">
-                <Shield className="w-4 h-4 text-white" />
-              </div>
-              <span>Blockchain Certificate</span>
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-6">
-            {/* Premium Certificate Header */}
-            <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-2xl p-6 text-center">
-              <div className="w-16 h-16 bg-gradient-to-r from-amber-500 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Shield className="w-8 h-8 text-white" />
-              </div>
-              <h3 className="text-lg font-bold text-amber-800 mb-2">Premium Verified</h3>
-              <p className="text-sm text-amber-700">{currentProperty?.address}</p>
-            </div>
-
-            {/* Trust Score */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-slate-700">Trust Score</span>
-                <span className="text-lg font-bold text-emerald-600">{currentProperty?.verificationScore}%</span>
-              </div>
-              <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-emerald-500 to-green-500 transition-all duration-1000"
-                  style={{ width: `${currentProperty?.verificationScore || 0}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Blockchain Details */}
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-slate-700">Blockchain Address</label>
-                <p className="text-xs font-mono text-blue-600 bg-blue-50 p-2 rounded-lg mt-1 break-all">
-                  5xK9mN2pQr8sT3uV6wX7yZ1A2B3C4D5E6F7G8H9I0J
-                </p>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-slate-700">Verified Documents</label>
-                <div className="grid grid-cols-2 gap-2 mt-2">
-                  {["Title Deed", "Survey Plan", "Building Permit", "Tax Clearance"].map((doc, index) => (
-                    <div key={index} className="flex items-center space-x-2 bg-emerald-50 p-2 rounded-lg">
-                      <div className="w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center">
-                        <span className="text-white text-xs">✓</span>
-                      </div>
-                      <span className="text-xs text-emerald-700">{doc}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Verifier Credentials */}
-            <div className="bg-slate-50 rounded-2xl p-4">
-              <h4 className="text-sm font-medium text-slate-700 mb-2">Verified By</h4>
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-emerald-500 rounded-2xl flex items-center justify-center">
-                  <span className="text-white font-bold text-xs">PB</span>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-slate-900">PropaBridge Network</p>
-                  <p className="text-xs text-slate-600">Licensed Verification Authority</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
